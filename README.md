@@ -46,6 +46,7 @@ PharmaGuard AI streamlines this process by providing an AI-assisted clinical rev
 🌐 **Live Application**
 
 https://vercel.com/malee/pharmaguard-ai-tool/4nqzCkD9AcYwn7FwkJmr2XjZuhp8 
+https://maleehabegum.app.n8n.cloud/assistant/ecf67f37-052d-4596-81b9-d502f72495de
 
 
 ---
