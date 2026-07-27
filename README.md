@@ -45,13 +45,14 @@ PharmaGuard AI streamlines this process by providing an AI-assisted clinical rev
 
 🌐 **Live Application**
 
-[https://your-vercel-app.vercel.app](https://your-vercel-app.vercel.app)
+https://vercel.com/malee/pharmaguard-ai-tool/4nqzCkD9AcYwn7FwkJmr2XjZuhp8 
+
 
 ---
 
 # GitHub Repository
 
-[https://github.com/yourusername/pharmaguard-ai](https://github.com/yourusername/pharmaguard-ai)
+https://github.com/maleehameed-a11y/pharmaguard-AI.git
 
 ---
 
