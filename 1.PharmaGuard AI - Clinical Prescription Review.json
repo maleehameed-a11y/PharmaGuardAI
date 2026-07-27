@@ -1,0 +1,409 @@
+{
+  "name": "PharmaGuard AI - Clinical Prescription Review",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "PharmaGuard AI — Clinical Prescription Review engine.\n\nPOST patient data to /webhook/pharmaguard/review as JSON:\n{ age, gender, diagnosis, medications, allergies, kidneyDisease, liverDisease }\n\nReturns structured JSON: issues (with severity + color), safety score/status, monitoring, counseling, summary, disclaimer. Each review is saved to the \"PharmaGuard Reviews\" data table for history + dashboard stats.\n\nAI decision support only — final decisions belong to licensed professionals."
+      },
+      "id": "39abb18e-8f39-438f-af7f-d2ba16d9cfd9",
+      "name": "Sticky Note 39abb18e",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        512,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pharmaguard/review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "27c309e2-9298-4bea-a97a-ca343d58c9f8",
+      "name": "Prescription Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        112
+      ],
+      "webhookId": "4929fbd7-453e-430f-84a7-80f36e361121"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Review the following patient prescription and return the structured clinical review.\n\nPatient age: {{ $json.body.age }}\nGender: {{ $json.body.gender }}\nDiagnosis: {{ $json.body.diagnosis }}\nCurrent medications: {{ $json.body.medications }}\nKnown allergies: {{ $json.body.allergies }}\nKidney disease: {{ $json.body.kidneyDisease }}\nLiver disease: {{ $json.body.liverDisease }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an experienced Clinical Pharmacist working in a tertiary care hospital.\n\nReview every prescription carefully.\n\nIdentify:\n1. Drug-drug interactions\n2. Duplicate therapy\n3. Contraindications\n4. Dose-related concerns\n5. Drug allergies\n6. Organ impairment considerations\n7. Monitoring recommendations\n8. Patient counseling points\n\nFor every issue include:\n- Drug names\n- Severity (Low, Moderate, Severe)\n- Explanation\n- Suggested pharmacist action\n\nDo not invent interactions. If evidence is insufficient, state that clearly by setting evidence_sufficient to false and explaining.\n\nAlways include a disclaimer reminding users that final decisions belong to licensed healthcare professionals."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "2ea59a6a-f8bf-4422-8ae3-176727f604d6",
+      "name": "AI Clinical Review",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "7a1d94ba-1aa7-4431-a0b9-ff0d719969af",
+      "name": "GPT Clinical Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        336
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\"type\":\"object\",\"properties\":{\"issues\":{\"type\":\"array\",\"description\":\"One entry per clinical problem found. Empty array if none.\",\"items\":{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\",\"enum\":[\"Drug-Drug Interaction\",\"Duplicate Therapy\",\"Contraindication\",\"Dose Concern\",\"Drug Allergy\",\"Organ Impairment\",\"High-Risk Medication\",\"Monitoring\"]},\"drugs\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"Drug name(s) involved\"},\"severity\":{\"type\":\"string\",\"enum\":[\"Low\",\"Moderate\",\"Severe\"]},\"explanation\":{\"type\":\"string\"},\"pharmacist_action\":{\"type\":\"string\",\"description\":\"Suggested action for the pharmacist\"},\"evidence_sufficient\":{\"type\":\"boolean\",\"description\":\"False if evidence is insufficient to confirm the issue\"}},\"required\":[\"category\",\"drugs\",\"severity\",\"explanation\",\"pharmacist_action\",\"evidence_sufficient\"]}},\"monitoring_recommendations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"counseling_points\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"summary\":{\"type\":\"string\",\"description\":\"Brief overall clinical summary of the prescription\"},\"disclaimer\":{\"type\":\"string\",\"description\":\"Reminder that final decisions belong to licensed healthcare professionals\"}},\"required\":[\"issues\",\"monitoring_recommendations\",\"counseling_points\",\"summary\",\"disclaimer\"]}"
+      },
+      "id": "5e593707-625f-4232-958f-fcb4b4ff2f07",
+      "name": "Review Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst review = $json.output || {};\nconst issues = Array.isArray(review.issues) ? review.issues : [];\nconst body = $('Prescription Webhook').item.json.body || {};\n\nlet severe = 0, moderate = 0, low = 0;\nfor (const i of issues) {\n  const sev = (i.severity || '').toLowerCase();\n  if (sev === 'severe') severe++;\n  else if (sev === 'moderate') moderate++;\n  else if (sev === 'low') low++;\n}\n\n// Deterministic safety score (0-100): penalize by severity\nlet score = 100 - (severe * 30) - (moderate * 12) - (low * 4);\nif (score < 0) score = 0;\n\nlet status;\nif (severe > 0) status = 'High Risk';\nelse if (moderate > 0) status = 'Needs Review';\nelse status = 'Safe';\n\nconst highRiskPatient = severe > 0 || score < 50;\n\n// Attach color codes for the frontend\nconst colorMap = { Low: 'green', Moderate: 'yellow', Severe: 'red' };\nconst issuesWithColor = issues.map(function (i) {\n  return Object.assign({}, i, { color: colorMap[i.severity] || 'green' });\n});\n\nconst reviewId = 'RX-' + $now.toFormat('yyyyLLdd') + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();\nconst reviewedAt = $now.toISO();\n\nconst fullReview = {\n  review_id: reviewId,\n  reviewed_at: reviewedAt,\n  patient: {\n    age: body.age ?? null,\n    gender: body.gender ?? null,\n    diagnosis: body.diagnosis ?? null,\n    medications: body.medications ?? null,\n    allergies: body.allergies ?? null,\n    kidneyDisease: body.kidneyDisease ?? null,\n    liverDisease: body.liverDisease ?? null,\n  },\n  safety: {\n    score: score,\n    status: status,\n    high_risk_patient: highRiskPatient,\n    counts: { severe: severe, moderate: moderate, low: low },\n  },\n  issues: issuesWithColor,\n  monitoring_recommendations: review.monitoring_recommendations || [],\n  counseling_points: review.counseling_points || [],\n  summary: review.summary || '',\n  disclaimer: review.disclaimer ||\n    'This review is AI-generated clinical decision support only. Final decisions belong to licensed healthcare professionals.',\n};\n\nreturn {\n  json: {\n    fullReview: fullReview,\n    review_id: reviewId,\n    reviewed_at: reviewedAt,\n    patient_age: body.age ?? null,\n    patient_gender: body.gender ?? null,\n    diagnosis: body.diagnosis ?? null,\n    medications: body.medications ?? null,\n    allergies: body.allergies ?? null,\n    kidney_disease: body.kidneyDisease === true,\n    liver_disease: body.liverDisease === true,\n    safety_score: score,\n    safety_status: status,\n    severe_count: severe,\n    moderate_count: moderate,\n    low_count: low,\n    high_risk_patient: highRiskPatient,\n    review_json: JSON.stringify(fullReview),\n  },\n};\n"
+      },
+      "id": "4a7feffd-845e-4f39-8829-0ad9886fae89",
+      "name": "Compute Safety Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Sn6vm4nWkuXkBQij",
+          "cachedResultName": "PharmaGuard Reviews"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "review_id": "={{ $json.review_id }}",
+            "patient_age": "={{ $json.patient_age }}",
+            "patient_gender": "={{ $json.patient_gender }}",
+            "diagnosis": "={{ $json.diagnosis }}",
+            "medications": "={{ $json.medications }}",
+            "allergies": "={{ $json.allergies }}",
+            "kidney_disease": "={{ $json.kidney_disease }}",
+            "liver_disease": "={{ $json.liver_disease }}",
+            "safety_score": "={{ $json.safety_score }}",
+            "safety_status": "={{ $json.safety_status }}",
+            "severe_count": "={{ $json.severe_count }}",
+            "moderate_count": "={{ $json.moderate_count }}",
+            "low_count": "={{ $json.low_count }}",
+            "high_risk_patient": "={{ $json.high_risk_patient }}",
+            "review_json": "={{ $json.review_json }}",
+            "reviewed_at": "={{ $json.reviewed_at }}"
+          },
+          "schema": [
+            {
+              "id": "review_id",
+              "displayName": "review_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "patient_age",
+              "displayName": "patient_age",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "patient_gender",
+              "displayName": "patient_gender",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "diagnosis",
+              "displayName": "diagnosis",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "medications",
+              "displayName": "medications",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "allergies",
+              "displayName": "allergies",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kidney_disease",
+              "displayName": "kidney_disease",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "liver_disease",
+              "displayName": "liver_disease",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "safety_score",
+              "displayName": "safety_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "safety_status",
+              "displayName": "safety_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "severe_count",
+              "displayName": "severe_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "moderate_count",
+              "displayName": "moderate_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "low_count",
+              "displayName": "low_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "high_risk_patient",
+              "displayName": "high_risk_patient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_json",
+              "displayName": "review_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewed_at",
+              "displayName": "reviewed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "date",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8ca7942c-43ef-4de0-ad60-cf23934ec249",
+      "name": "Save Review",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Compute Safety Summary').item.json.fullReview) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ec30fa4f-b0e2-46f1-a8fa-f09efc9e5fd6",
+      "name": "Return Review",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1024,
+        112
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Prescription Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Clinical Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Clinical Review": {
+      "main": [
+        [
+          {
+            "node": "Compute Safety Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT Clinical Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Clinical Review",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Clinical Review",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Safety Summary": {
+      "main": [
+        [
+          {
+            "node": "Save Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Review": {
+      "main": [
+        [
+          {
+            "node": "Return Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "errorWorkflow": "9rh7QgzJnmkWrUYI"
+  },
+  "versionId": "7d0d5bf5-4e30-4bd4-8024-67cc2140d6d7",
+  "meta": {
+    "instanceId": "ce46c297cd49d6f5aa130fcb7918ee3b8ae6d36b84679de79df3f4040d30213d"
+  },
+  "nodeGroups": [],
+  "id": "xZVZPmwVcodaVgpB",
+  "tags": []
+}
