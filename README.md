@@ -52,7 +52,7 @@ https://vercel.com/malee/pharmaguard-ai-tool/4nqzCkD9AcYwn7FwkJmr2XjZuhp8
 
 # GitHub Repository
 
-https://github.com/maleehameed-a11y/pharmaguard-AI.git
+https://github.com/maleehameed-a11y/PharmaGuardAI.git
 
 ---
 
